@@ -5,7 +5,7 @@ MATTERMOST_WEBHOOK_URLS = {
 }
 GITHUB_IGNORE_ACTIONS = {
 }
-SECRET = ""
+SECRET = b""
 SHOW_AVATARS = True
 SERVER = {
     'hook': "/",
