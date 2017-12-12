@@ -14,6 +14,10 @@ from mattermostgithub import app
 
 SECRET = hmac.new(config.SECRET, digestmod=hashlib.sha1) if config.SECRET else None
 
+@app.route(config.SERVER['hook'] or "/", methods=['GET'])
+def alive():
+    return 'Server Up and Running', 200
+
 @app.route(config.SERVER['hook'] or "/", methods=['POST'])
 def root():
     if request.json is None:
