@@ -1,0 +1,5 @@
+FLASK_APP=/opt/app-root/src/mattermostgithub/server.py
+MGI_CONFIG_FILE=/opt/app-root/src/config/config.py
+PYTHONPATH=/opt/app-root/src/config
+APP_MODULE=server
+APP_CONFIG=gunicorn_config.py
