@@ -1,6 +1,9 @@
 *.pyc
 *.swp
 config.py
+test/*
+!test/config.template
+!test/sendnotification.py
 # distutils related files
 .cache
 *.egg-info

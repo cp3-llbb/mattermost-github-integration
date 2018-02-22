@@ -1,18 +1,44 @@
 import json
-import hmac
-import hashlib
 import requests
 from flask import request
 
-from mattermostgithub import config
-from mattermostgithub.payload import (
-    PullRequest, PullRequestComment, Issue, IssueComment,
-    Repository, Branch, Push, Tag, CommitComment, Wiki
-)
+from mattermostgithub import config, app
 
-from mattermostgithub import app
-
+import hmac
+import hashlib
 SECRET = hmac.new(config.SECRET, digestmod=hashlib.sha1) if config.SECRET else None
+
+def check_signature_githubsecret(signature, secret, payload):
+    sig2 = secret.copy()
+    sig2.update(payload)
+    return sig2.hexdigest() == signature
+
+def get_travis_public_key():
+    from urllib.parse import urlparse
+    import os.path
+
+    cfg_url = config.TRAVIS_CONFIG_URL
+    if urlparse(cfg_url).scheme: ## valid url
+        response = requests.get(config.TRAVIS_CONFIG_URL, timeout=10.0)
+        response.raise_for_status()
+        return response.json()['config']['notifications']['webhook']['public_key']
+    elif os.path.isfile(cfg_url): ## local file (for testing)
+        with open(cfg_url, "r") as pkf:
+            cont = pkf.read()
+            pubkey = cont.encode()
+            if not pubkey:
+                raise RuntimeError("No public key found in {}".format(cfg_url))
+            return pubkey
+    else:
+        raise ValueError("Travis config url '{}' is neither a valid url nor an existing local file path".format(cfg_url))
+
+import OpenSSL.crypto
+def check_signature(signature, pubkey, payload):
+    from OpenSSL.crypto import verify, load_publickey, FILETYPE_PEM, X509
+    pkey_public_key = load_publickey(FILETYPE_PEM, pubkey)
+    cert = X509()
+    cert.set_pubkey(pkey_public_key)
+    verify(cert, signature, payload, str('sha1'))
 
 @app.route(config.SERVER['hook'] or "/", methods=['GET'])
 def alive():
@@ -20,21 +46,69 @@ def alive():
 
 @app.route(config.SERVER['hook'] or "/", methods=['POST'])
 def root():
-    if request.json is None:
-        print('Invalid Content-Type')
-        return 'Content-Type must be application/json and the request body must contain valid JSON', 400
+    if "X-Github-Event" in request.headers:
+        ## assume Github notification, authenticate if needed
+        if SECRET:
+            signature = request.headers.get('X-Hub-Signature', None)
+            if not signature:
+                return 'Missing X-Hub-Signature', 400
+            if not check_signature_githubsecret(signature.split("=")[1], SECRET, request.data):
+                return 'Invalid X-Hub-Signature', 400
 
-    if SECRET:
-        signature = request.headers.get('X-Hub-Signature', None)
-        sig2 = SECRET.copy()
-        sig2.update(request.data)
+        json_data = request.json
+        if not json_data:
+            print('Invalid Content-Type')
+            return 'Content-Type must be application/json and the request body must contain valid JSON', 400
 
-        if signature is None or sig2.hexdigest() != signature.split('=')[1]:
-            return 'Invalid or missing X-Hub-Signature', 400
+        try:
+            return handle_github(json_data, request.headers['X-Github-Event'])
+        except Exception as ex:
+            print("Error interpreting github notification: {}".format(ex))
+            return "Internal error", 400
 
-    data = request.json
-    event = request.headers['X-Github-Event']
+    elif "Travis-Repo-Slug" in request.headers:
+        ### Travis-CI notification, verify
+        ## adapted from https://gist.github.com/andrewgross/8ba32af80ecccb894b82774782e7dcd4
+        if config.TRAVIS_CONFIG_URL:
+            if "Signature" not in request.headers:
+                return "No signature", 404
+            import base64
+            signature = base64.b64decode(request.headers["Signature"])
+            try:
+                pubkey = get_travis_public_key()
+            except requests.Timeout:
+                print("Travis public key timeout")
+                return "Could not get travis server public key", 400
+            except requests.RequestException as ex:
+                print("Travis public key exception: {0}".format(ex.message))
+                return "Could not get travis server public key", 400
+            except Exception as ex:
+                print("Problem getting public key: {}".format(ex))
+                return "Internal error", 400
+            try:
+                check_signature(signature, pubkey, request.data)
+            except OpenSSL.crypto.Error:
+                print("Request failed verification")
+                return "Unauthorized", 404
 
+        json_data = request.json
+        if json_data is None:
+            print('Invalid Content-Type')
+            return 'Content-Type must be application/json and the request body must contain valid JSON', 400
+
+        try:
+            return handle_travis(request.json)
+        except Exception as ex:
+            print("Error interpreting travis notification: {}".format(ex))
+            return "Internal error", 400
+    else:
+        return "Unknown notification type", 400
+
+def handle_github(data, event):
+    from mattermostgithub.github_payload import (
+        PullRequest, PullRequestComment, Issue, IssueComment,
+        Repository, Branch, Push, Tag, CommitComment, Wiki
+    )
     msg = ""
     if event == "ping":
         msg = "ping from %s" % data['repository']['full_name']
@@ -100,6 +174,52 @@ def root():
     else:
         return "Not implemented", 400
 
+def handle_travis(data):
+    ## repo info
+    repo_msg = "[{name}]({url})".format(name=data["repository"]["name"], url=data["repository"]["url"])
+
+    ## status message
+    buildstatus_msg = "[#{no}]({url}) {status}".format(
+            no=data["number"],
+            url=data["build_url"],
+            status=data["status_message"].lower())
+
+    ## interpret event
+    ntype = data["type"]
+    event_msg = "EVENT_PLACEHOLDER"
+    if ntype == "push":
+        event_msg = "pushed commit {commit} on branch {branch} by {author}".format(
+                commit="[{0}]({1})".format(data["message"], data["compare_url"]),
+                branch=data["branch"],
+                author=("[{name}](mailto:{mail}){0}".format(
+                      ( "" if data["author_name"] == data["committer_name"] and data["author_email"] == data["committer_email"]
+                      else " with [{name}](mailto:{mail})".format(name=data["committer_name"], mail=data["committer_email"]))
+                    , name=data["author_name"], mail=data["author_email"]
+                    )
+                )
+                )
+    elif ntype == "pull_request":
+        event_msg = "pull request {prid} \"{prtitle}\" by {author}".format(
+                prid="(#{0})[{1}]".format(data["pull_request"], data["compare_url"]),
+                prtitle=data["pull_request_title"],
+                author="[{name}]({mail})".format(data["author_name"], data["author_email"])
+                )
+    else:
+        raise ValueError("Unknown event type {}".format(data["type"]))
+
+    msg = "Travis build {build_status} for {event} in {repo}".format(
+            repo=repo_msg,
+            build_status=buildstatus_msg,
+            event=event_msg)
+
+    hook_info = get_hook_info(data)
+    if hook_info:
+        url, channel = hook_info
+        post(msg, url, channel)
+        return "Notification successfully posted to Mattermost"
+    else:
+        return "Notification ignored (repository is blacklisted)."
+
 def post(text, url, channel):
     data = {}
     data['text'] = text
@@ -114,24 +234,28 @@ def post(text, url, channel):
         print('Encountered error posting to Mattermost URL %s, status=%d, response_body=%s' % (url, r.status_code, r.json()))
 
 def get_hook_info(data):
-    if 'repository' in data:
-        repo = data['repository']['full_name']
-        if repo in config.MATTERMOST_WEBHOOK_URLS:
-            return config.MATTERMOST_WEBHOOK_URLS[repo]
-    if 'organization' in data:
-        org = data['organization']['login']
-        if org in config.MATTERMOST_WEBHOOK_URLS:
-            return config.MATTERMOST_WEBHOOK_URLS[org]
-    if 'repository' in data:
-        if 'login' in data['repository']['owner']:
-            owner = data['repository']['owner']['login']
-            if owner in config.MATTERMOST_WEBHOOK_URLS:
-                return config.MATTERMOST_WEBHOOK_URLS[owner]
-        if 'name' in data['repository']['owner']:
-            owner = data['repository']['owner']['name']
-            if owner in config.MATTERMOST_WEBHOOK_URLS:
-                return config.MATTERMOST_WEBHOOK_URLS[owner]
-    return config.MATTERMOST_WEBHOOK_URLS['default']
+    keys_to_try = [
+          ## for Github
+            ("repository", "full_name")
+          , ("organization", "login")
+          , ("repository", "owner", "login")
+          , ("repository", "owner", "name")
+          ## for travis
+          , ("repository", "url")
+          , ("repository", "name")
+          , ("repository", "owner_name")
+          ]
+    settings = config.MATTERMOST_WEBHOOK_URLS
+    for keys in keys_to_try:
+        dt = data
+        for i,ky in enumerate(keys):
+            if ky in dt:
+                dt = dt[ky]
+                if i == len(keys)-1 and dt in settings:
+                    return settings[dt]
+            else:
+                break
+    return config.MATTERMOST_WEBHOOK_URLS["default"]
 
 if __name__ == "__main__":
     app.run(
