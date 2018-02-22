@@ -1,3 +1,4 @@
+UPGRADE_PIP_TO_LATEST=1
 FLASK_APP=/opt/app-root/src/mattermostgithub/server.py
 MGI_CONFIG_FILE=/opt/app-root/src/config/config.py
 PYTHONPATH=/opt/app-root/src/config
