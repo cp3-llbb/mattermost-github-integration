@@ -7,6 +7,7 @@ GITHUB_IGNORE_ACTIONS = {
 }
 SECRET = b""
 SHOW_AVATARS = True
+TRAVIS_CONFIG_URL = ""
 SERVER = {
     'hook': "/",
     'address': "0.0.0.0",
