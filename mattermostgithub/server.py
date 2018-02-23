@@ -190,7 +190,7 @@ def handle_travis(data):
     event_msg = "EVENT_PLACEHOLDER"
     if ntype == "push":
         event_msg = "pushed commit {commit} on branch {branch} by {author}".format(
-                commit="[{0}]({1})".format(data["message"], data["compare_url"]),
+                commit="[{0}]({1})".format(data["message"].split("\n")[0], data["compare_url"]),
                 branch=data["branch"],
                 author=("[{name}](mailto:{mail}){0}".format(
                       ( "" if data["author_name"] == data["committer_name"] and data["author_email"] == data["committer_email"]
