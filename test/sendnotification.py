@@ -89,14 +89,13 @@ if __name__ == "__main__":
         if not os.path.isfile(args.travispayload):
             raise RuntimeError("No such file: {}".format(args.travispayload))
         with open(args.travispayload) as pf:
-            payload = json.load(pf)
+            payload = pf.read()
 
-        signature = generate_signature(privkey, json.dumps(payload))
+        signature = generate_signature(privkey, payload)
 
-        requests.post(args.server, json={"payload" : payload},
+        requests.post(args.server, data={"payload" : payload},
                 headers={
-                      "Content-Type"     : "application/json"
-                    , "Travis-Repo-Slug" : "cp3-llbb/justatest"
+                      "Travis-Repo-Slug" : "cp3-llbb/justatest"
                     , "Signature"        : signature
                     }
                 )

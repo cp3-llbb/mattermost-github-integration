@@ -67,17 +67,8 @@ def root():
             return "Internal error", 400
 
     elif "Travis-Repo-Slug" in request.headers:
-        json_data = request.json
-        ## FIXME TEMPORARY debugging info
-        from pprint import pprint
-        print("Possibly a Travis notification, details:")
-        pprint(request.headers)
-        pprint(request.data)
-        if json_data is None:
-            print('Invalid Content-Type')
-            return 'Content-Type must be application/json and the request body must contain valid JSON', 400
-        if "payload" not in json_data:
-            print("Key 'payload' not found")
+        payload = request.form.get("payload")
+        if not payload:
             return "Invalid payload", 400
 
         ### Travis-CI notification, verify
@@ -99,17 +90,19 @@ def root():
                 print("Problem getting public key: {}".format(ex))
                 return "Internal error", 400
             try:
-                check_signature(signature, pubkey, json.dumps(json_data["payload"]))
+                check_signature(signature, pubkey, payload)
             except OpenSSL.crypto.Error:
                 print("Request failed verification")
                 return "Unauthorized", 404
 
         try:
-            return handle_travis(json_data["payload"])
+            data = json.loads(payload)
+            return handle_travis(data)
         except Exception as ex:
             print("Error interpreting travis notification: {}".format(ex))
             return "Internal error", 400
     else:
+        print("Unknown notification type")
         return "Unknown notification type", 400
 
 def handle_github(data, event):
