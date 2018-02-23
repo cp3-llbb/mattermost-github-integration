@@ -2,6 +2,7 @@
 
 import os.path
 import requests
+import json
 
 # taken from https://gist.github.com/andrewgross/8ba32af80ecccb894b82774782e7dcd4#gistcomment-1869315
 import base64
@@ -88,12 +89,11 @@ if __name__ == "__main__":
         if not os.path.isfile(args.travispayload):
             raise RuntimeError("No such file: {}".format(args.travispayload))
         with open(args.travispayload) as pf:
-            cont = pf.read()
-            payload = cont.encode()
+            payload = json.load(pf)
 
-        signature = generate_signature(privkey, payload)
+        signature = generate_signature(privkey, json.dumps(payload))
 
-        requests.post(args.server, data=payload,
+        requests.post(args.server, json={"payload" : payload},
                 headers={
                       "Content-Type"     : "application/json"
                     , "Travis-Repo-Slug" : "cp3-llbb/justatest"

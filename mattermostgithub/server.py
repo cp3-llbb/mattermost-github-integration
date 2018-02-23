@@ -67,6 +67,14 @@ def root():
             return "Internal error", 400
 
     elif "Travis-Repo-Slug" in request.headers:
+        json_data = request.json
+        if json_data is None:
+            print('Invalid Content-Type')
+            return 'Content-Type must be application/json and the request body must contain valid JSON', 400
+        if "payload" not in json_data:
+            print("Key 'payload' not found")
+            return "Invalid payload", 400
+
         ### Travis-CI notification, verify
         ## adapted from https://gist.github.com/andrewgross/8ba32af80ecccb894b82774782e7dcd4
         if config.TRAVIS_CONFIG_URL:
@@ -86,18 +94,13 @@ def root():
                 print("Problem getting public key: {}".format(ex))
                 return "Internal error", 400
             try:
-                check_signature(signature, pubkey, request.data)
+                check_signature(signature, pubkey, json.dumps(json_data["payload"]))
             except OpenSSL.crypto.Error:
                 print("Request failed verification")
                 return "Unauthorized", 404
 
-        json_data = request.json
-        if json_data is None:
-            print('Invalid Content-Type')
-            return 'Content-Type must be application/json and the request body must contain valid JSON', 400
-
         try:
-            return handle_travis(request.json)
+            return handle_travis(json_data["payload"])
         except Exception as ex:
             print("Error interpreting travis notification: {}".format(ex))
             return "Internal error", 400
