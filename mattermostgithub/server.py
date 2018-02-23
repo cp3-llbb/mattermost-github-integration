@@ -68,6 +68,11 @@ def root():
 
     elif "Travis-Repo-Slug" in request.headers:
         json_data = request.json
+        ## FIXME TEMPORARY debugging info
+        from pprint import pprint
+        print("Possibly a Travis notification, details:")
+        pprint(request.headers)
+        pprint(request.data)
         if json_data is None:
             print('Invalid Content-Type')
             return 'Content-Type must be application/json and the request body must contain valid JSON', 400
