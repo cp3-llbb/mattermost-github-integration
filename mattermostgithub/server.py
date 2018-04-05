@@ -201,7 +201,7 @@ def handle_travis(data):
                 )
     elif ntype == "pull_request":
         event_msg = "pull request {prid} \"{prtitle}\" by {author}".format(
-                prid="(#{0})[{1}]".format(data["pull_request_number"], data["compare_url"]),
+                prid="[#{0}]({1})".format(data["pull_request_number"], data["compare_url"]),
                 prtitle=data["pull_request_title"],
                 author="[{name}]({mail})".format(name=data["author_name"], mail=data["author_email"])
                 )
