@@ -203,7 +203,7 @@ def handle_travis(data):
         event_msg = "pull request {prid} \"{prtitle}\" by {author}".format(
                 prid="(#{0})[{1}]".format(data["pull_request"], data["compare_url"]),
                 prtitle=data["pull_request_title"],
-                author="[{name}]({mail})".format(data["author_name"], data["author_email"])
+                author="[{name}]({mail})".format(name=data["author_name"], mail=data["author_email"])
                 )
     else:
         raise ValueError("Unknown event type {}".format(data["type"]))
