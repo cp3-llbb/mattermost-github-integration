@@ -311,12 +311,13 @@ def handle_gitlab(data, event):
                 , note="\n".join("> {}".format(ln) for ln in attrs["note"].split("\n")) ## quote
                 )
     elif event in ("Issue Hook", "Merge Request Hook"):
-        msg = "{user} {verb} {what} [#{iid}: {title}]({url}) for {repo}".format(
+        msg = "{user} {verb} {what} [#{iid}: {title}]({url}) for {repo}{more}".format(
                   user=user_link(data["user"], webbase)
                 , verb=actionTransl[attrs["action"]]
                 , what=" ".join(tok.lower() for tok in event.split(" ")[:-1])
                 , iid=attrs["iid"], title=attrs["title"], url=attrs["url"]
                 , repo=repo_link(data["repository"])
+                , more=("\n{}".format("\n".join("> {}".format(ln) for ln in attrs["description"].split("\n"))) if attrs["action"] == "open" and len(attrs["description"]) > 0 else "")
                 )
     elif event == "Wiki Page Hook":
         msg = "{user} {verb} wiki page [{title}]({url}) for {project}".format(
