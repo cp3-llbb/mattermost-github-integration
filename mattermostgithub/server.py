@@ -248,8 +248,8 @@ def handle_gitlab(data, event):
         if config.SHOW_AVATARS:
             return "![]({av} =x18) {nm}".format(av=udata["avatar_url"], nm=nmemail)
         return nmemail
-    def repo_link(repodata):
-        return "[{nm}]({url})".format(nm=repodata["name"], url=repodata["homepage"])
+    def repo_link(projdata):
+        return "[{nm}]({url})".format(nm=projdata["path_with_namespace"], url=projdata["homepage"])
     def ref_link(ref, repourl):
         return "[{nm}]({repourl}/tree/{nm})".format(nm="/".join(ref.split("/")[2:]), repourl=repourl)
     def commit_linkmsg(cdata):
@@ -277,7 +277,7 @@ def handle_gitlab(data, event):
     if event == "Push Hook":
         msg = "{user} pushed {ncomm} to {branch} in {repo}\n{commitlist}".format(
               user=puser_link(data, webbase)
-            , repo=repo_link(data["repository"])
+            , repo=repo_link(data["project"])
             , branch=ref_link(data["ref"], repourl=repoweb)
             , ncomm=("{0:d} commits".format(data["total_commits_count"]) if data["total_commits_count"] > 1 else "a commit")
             , commitlist="\n".join("- {}".format(commit_linkmsg(cdata)) for cdata in data["commits"])
@@ -286,7 +286,7 @@ def handle_gitlab(data, event):
         if data["object_kind"] == "tag_push":
             msg = "{user} pushed tag {tag} in {repo}".format(
                   user=puser_link(data, webbase)
-                , repo=repo_link(data["repository"])
+                , repo=repo_link(data["project"])
                 , tag=ref_link(data["ref"], repourl=repoweb)
                 )
     elif event == "Note Hook":
@@ -307,7 +307,7 @@ def handle_gitlab(data, event):
                   user=user_link(data["user"], webbase)
                 , noteurl=attrs["url"]
                 , obj=objlink
-                , repo=repo_link(data["repository"])
+                , repo=repo_link(data["project"])
                 , note="\n".join("> {}".format(ln) for ln in attrs["note"].split("\n")) ## quote
                 )
     elif event in ("Issue Hook", "Merge Request Hook"):
@@ -316,7 +316,7 @@ def handle_gitlab(data, event):
                 , verb=actionTransl[attrs["action"]]
                 , what=" ".join(tok.lower() for tok in event.split(" ")[:-1])
                 , iid=attrs["iid"], title=attrs["title"], url=attrs["url"]
-                , repo=repo_link(data["repository"])
+                , repo=repo_link(data["project"])
                 , more=("\n{}".format("\n".join("> {}".format(ln) for ln in attrs["description"].split("\n"))) if attrs["action"] == "open" and len(attrs["description"]) > 0 else "")
                 )
     elif event == "Wiki Page Hook":
