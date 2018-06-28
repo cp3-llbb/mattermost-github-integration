@@ -101,6 +101,21 @@ def root():
         except Exception as ex:
             print("Error interpreting travis notification: {}".format(ex))
             return "Internal error", 400
+    elif "X-Gitlab-Event" in request.headers:
+        ## Gitlab notification, authenticate if needed
+        if ( not config.GITLAB_SECRET ) or request.headers.get("X-Gitlab-Token", None) != config.GITLAB_SECRET:
+            return "Invalid X-Gitlab-Token", 400
+
+        json_data = request.json
+        if not json_data:
+            print('Invalid Content-Type')
+            return 'Content-Type must be application/json and the request body must contain valid JSON', 400
+
+        try:
+            return handle_gitlab(json_data, request.headers['X-Gitlab-Event'])
+        except Exception as ex:
+            print("Error interpreting gitlab notification: {}".format(ex))
+            return "Internal error", 400
     else:
         print("Unknown notification type")
         return "Unknown notification type", 400
@@ -220,6 +235,119 @@ def handle_travis(data):
         return "Notification successfully posted to Mattermost"
     else:
         return "Notification ignored (repository is blacklisted)."
+
+def handle_gitlab(data, event):
+    import os.path
+    def puser_link(udata, web_base): ## for push events
+        nmemail = "[{nm}]({profile})".format(nm=udata["user_name"], profile=os.path.join(web_base, udata["user_username"])) if "user_username" in udata else udata["user_name"]
+        if config.SHOW_AVATARS:
+            return "![]({av}) {nm}".format(av=udata["user_avatar"], nm=nmemail)
+        return nmemail
+    def user_link(udata, web_base):
+        nmemail = "[{nm}]({profile})".format(nm=udata["name"], profile=os.path.join(web_base, udata["username"]))
+        if config.SHOW_AVATARS:
+            return "![]({av}) {nm}".format(av=udata["avatar_url"], nm=nmemail)
+        return nmemail
+    def repo_link(repodata):
+        return "[{nm}]({url})".format(nm=repodata["name"], url=repodata["homepage"])
+    def ref_link(ref, repourl):
+        return "[{nm}]({repourl}/tree/{nm})".format(nm="/".join(ref.split("/")[2:]), repourl=repourl)
+    def commit_linkmsg(cdata):
+        return "[`{chsh}`]({curl}) {cmsg}".format(
+                  chsh=cdata["id"][:7]
+                , curl=cdata["url"]
+                , cmsg=cdata["message"].split("\n")[0]
+                )
+    def issuemrsnippet_link(objdata, url):
+        return "[#{iid}: {title}]({url})".format(iid=objdata.get("iid", objdata["id"]), title=objdata["title"], url=url)
+
+    actionTransl = {
+              "open"   : "opened"
+            , "close"  : "closed"
+            , "update" : "updated"
+            , "merge"  : "merged"
+            , "reopen" : "reopened"
+            , "create" : "created"
+            , "delete" : "deleted"
+            }
+    repoweb = data["repository"]["homepage"] if "repository" in data else data["project"]["web_url"]
+    webbase = "/".join(repoweb.split("/")[:-2]) ## remove last two paths
+    attrs = data.get("object_attributes", dict())
+    msg = None
+    if event == "Push Hook":
+        msg = "{user} pushed {ncomm} to {branch} in {repo}\n{commitlist}".format(
+              user=puser_link(data, webbase)
+            , repo=repo_link(data["repository"])
+            , branch=ref_link(data["ref"], repourl=repoweb)
+            , ncomm=("{0:d} commits".format(data["total_commits_count"]) if data["total_commits_count"] > 1 else "a commit")
+            , commitlist="\n".join("- {}".format(commit_linkmsg(cdata)) for cdata in data["commits"])
+            )
+    elif event == "Tag Push Hook":
+        if data["object_kind"] == "tag_push":
+            msg = "{user} pushed tag {tag} in {repo}".format(
+                  user=puser_link(data, webbase)
+                , repo=repo_link(data["repository"])
+                , tag=ref_link(data["ref"], repourl=repoweb)
+                )
+    elif event == "Note Hook":
+        ntype = attrs["noteable_type"]
+        if ntype == "Commit":
+            objlink = "commit {}".format(commit_linkmsg(data["commit"]))
+        else:
+            nttypes = { "MergeRequest" : ("merge_request", "merge request")
+                      , "Issue"        : ("issue", "issue")
+                      , "Snippet"      : ("snippet", "snippet")
+                      }
+            if ntype not in nttypes:
+                raise ValueError("Not a valid noteable_type: '{}'".format(ntype))
+            else:
+                issuemrsnippet_url = attrs["url"].split("#")[0]
+                objlink = "{descr} {link}".format(descr=nttypes[ntype][1], link=issuemrsnippet_link(data[nttypes[ntype][0]], url=issuemrsnippet_url))
+        msg = "{user} added [a comment]({noteurl}) on {obj} in {repo}\n{note}".format(
+                  user=user_link(data["user"], webbase)
+                , noteurl=attrs["url"]
+                , obj=objlink
+                , repo=repo_link(data["repository"])
+                , note="\n".join("> {}".format(ln) for ln in attrs["note"].split("\n")) ## quote
+                )
+    elif event in ("Issue Hook", "Merge Request Hook"):
+        msg = "{user} {verb} {what} [#{iid}: {title}]({url}) for {repo}{more}".format(
+                  user=user_link(data["user"], webbase)
+                , verb=actionTransl[attrs["action"]]
+                , what=" ".join(tok.lower() for tok in event.split(" ")[:-1])
+                , iid=attrs["iid"], title=attrs["title"], url=attrs["url"]
+                , repo=repo_link(data["repository"])
+                , more=("\n{}".format("\n".join("> {}".format(ln) for ln in attrs["description"].split("\n"))) if attrs["action"] == "open" and len(attrs["description"]) > 0 else "")
+                )
+    elif event == "Wiki Page Hook":
+        msg = "{user} {verb} wiki page [{title}]({url}) for {project}".format(
+                  user=user_link(data["user"], webbase)
+                , verb=actionTransl[attrs["action"]]
+                , title=attrs["title"], url=attrs["url"]
+                , project="[{name}]({url})".format(name=data["project"]["name"], url=data["project"]["web_url"])
+                )
+    elif event == "Pipeline Hook":
+        pass ## not supported yet
+    elif event == "Build Hook":
+        pass ## not supported yet
+
+    if msg:
+        hook_info = get_hook_info(data)
+        if hook_info:
+            url, channel = hook_info
+
+            if ( hasattr(config, "GITLAB_IGNORE_ACTIONS") and
+                 ( event in config.GITLAB_IGNORE_ACTIONS
+                    or data.get("object_kind", None) in config.GITLAB_IGNORE_ACTIONS ) ):
+                return "Notification action ignored (as per configuration)"
+
+            post(msg, url, channel)
+
+            return "Notification successfully posted to Mattermost"
+        else:
+            return "Notification ignored (repository is blacklisted)."
+    else:
+        return "Not implemented", 400
 
 def post(text, url, channel):
     data = {}

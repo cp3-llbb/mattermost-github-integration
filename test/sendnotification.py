@@ -33,12 +33,16 @@ if __name__ == "__main__":
     argparser.add_argument("--server", default="localhost:5000", help="Flask app url")
     argparser.add_argument("--test-github", action="store_true", help="Send a test Github notification")
     argparser.add_argument("--test-travis", action="store_true", help="Send a test Github notification")
+    argparser.add_argument("--test-gitlab", action="store_true", help="Send a test Github notification")
     argparser.add_argument("--githubpayload", default="github_payload.json", help="A Github notification for testing")
     argparser.add_argument("--githubsecret", default="mysecret", help="Secret to use for Github notifications")
     argparser.add_argument("--travispayload", default="travis_payload.json", help="A Github notification for testing")
     argparser.add_argument("--newkeys", action="store_true", help="Force generating a new testing keypair (for signing the Travis test notifications)")
     argparser.add_argument("--pubkey", default="pubkey.test", help="File to save the public key to")
     argparser.add_argument("--privkey", default="privkey.test", help="File to save the private key to")
+    argparser.add_argument("--gitlabpayload", default="gitlab_payload_push.json", help="A Gitlab notification for testing")
+    argparser.add_argument("--gitlabevent", default="Push Hook", help="X-Gitlab-Event header value")
+    argparser.add_argument("--gitlabsecret", default="mysecret2", help="Secret to use for a Gitlab notification")
     args = argparser.parse_args()
 
     if args.test_github:
@@ -97,5 +101,19 @@ if __name__ == "__main__":
                 headers={
                       "Travis-Repo-Slug" : "cp3-llbb/justatest"
                     , "Signature"        : signature
+                    }
+                )
+    if args.test_gitlab:
+        ## get payload
+        if not os.path.isfile(args.gitlabpayload):
+            raise RuntimeError("No such file: {}".format(args.gitlabpayload))
+        with open(args.gitlabpayload) as pf:
+            cont = pf.read()
+
+        requests.post(args.server, data=cont,
+                headers={
+                      "Content-Type"     : "application/json"
+                    , "X-Gitlab-Token"   : args.gitlabsecret.encode()
+                    , "X-Gitlab-Event"   : args.gitlabevent
                     }
                 )
