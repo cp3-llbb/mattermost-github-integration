@@ -289,6 +289,8 @@ def handle_gitlab(data, event):
                 , repo=repo_link(data["project"])
                 , tag=ref_link(data["ref"], repourl=repoweb)
                 )
+        else:
+            raise ValueError("Tag Push Hook with object_kind={0!r}".format(data["object_kind"]))
     elif event == "Note Hook":
         ntype = attrs["noteable_type"]
         if ntype == "Commit":
@@ -330,6 +332,8 @@ def handle_gitlab(data, event):
         pass ## not supported yet
     elif event == "Build Hook":
         pass ## not supported yet
+    else:
+        raise ValueError("Unknown event: {0}".format(event))
 
     if msg:
         hook_info = get_hook_info(data)
