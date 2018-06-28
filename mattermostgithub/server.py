@@ -241,12 +241,12 @@ def handle_gitlab(data, event):
     def puser_link(udata, web_base): ## for push events
         nmemail = "[{nm}]({profile})".format(nm=udata["user_name"], profile=os.path.join(web_base, udata["user_username"])) if "user_username" in udata else udata["user_name"]
         if config.SHOW_AVATARS:
-            return "![]({av}) {nm}".format(av=udata["user_avatar"], nm=nmemail)
+            return "![]({av} =x18) {nm}".format(av=udata["user_avatar"], nm=nmemail)
         return nmemail
     def user_link(udata, web_base):
         nmemail = "[{nm}]({profile})".format(nm=udata["name"], profile=os.path.join(web_base, udata["username"]))
         if config.SHOW_AVATARS:
-            return "![]({av}) {nm}".format(av=udata["avatar_url"], nm=nmemail)
+            return "![]({av} =x18) {nm}".format(av=udata["avatar_url"], nm=nmemail)
         return nmemail
     def repo_link(repodata):
         return "[{nm}]({url})".format(nm=repodata["name"], url=repodata["homepage"])
