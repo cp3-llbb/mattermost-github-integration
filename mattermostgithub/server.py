@@ -369,6 +369,9 @@ def get_hook_info(data):
           , ("organization", "login")
           , ("repository", "owner", "login")
           , ("repository", "owner", "name")
+          ## for Gitlab
+          , ("project", "path_with_namespace")
+          , ("project", "namespace")
           ## for travis
           , ("repository", "url")
           , ("repository", "name")
