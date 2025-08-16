@@ -16,9 +16,12 @@ except ModuleNotFoundError:
             # python 3
             import importlib.util
             spec = importlib.util.spec_from_file_location(module_name, file_path)
+            print("loadind config...")
+            print(spec)
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
             sys.modules[module_name] = module
+            print("Done")
         except ImportError:
             # python 2
             import imp
