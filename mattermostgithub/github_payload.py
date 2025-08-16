@@ -1,8 +1,8 @@
 from io import BytesIO
 import requests
-from mattermostgithub.config import SHOW_AVATARS
 try:
     from PIL import Image
+    from mattermostgithub.config import SHOW_AVATARS
 except ImportError:
     SHOW_AVATARS = False
 
@@ -39,7 +39,9 @@ class Payload(object):
         if not text:
             return text
         l = text.split("\n")
-        result = l[0]
+        # Show the first 4 lines of a message.
+        result = "".join(l[:4])
+        # Remove trailing newlines.
         if result[-1] in "[\n, \r]":
             result = result[:-1]
         if result != text:
@@ -80,6 +82,41 @@ class PullRequest(Payload):
     def synchronize(self):
         msg = """%s modified pull request [#%s %s](%s).""" % (self.user_link(),
             self.number, self.title, self.url)
+        return msg
+
+    def review_requested(self):
+        reviewers = ", ".join(self.data["requested_reviewers"])
+        msg = """%s requested a review from %s on [#%s %s](%s)""" % (self.user_link(),
+            reviewers,
+            self.number, self.title, self.url)
+        return msg
+
+    def pr_enqueued(self):
+        msg = """[#%s %s](%s) added to merge queue.""" % (
+            self.number, self.title, self.url)
+        return msg
+
+    def pr_dequeued(self):
+        reason = self.data["reason"]
+        msg = """[#%s %s](%s) removed from merge queue. Reason: %s""" % (
+            self.number, self.title, self.url, reason)
+        return msg
+
+class PullRequestReview(Payload):
+    def __init__(self, data):
+        Payload.__init__(self, data)
+        self.number = self.data['pull_request']['number']
+        self.title  = self.data['pull_request']['title']
+        self.body   = self.data['review']['body']
+        self.url    = self.data['review']['html_url']
+
+    def submitted(self):
+        body = self.preview(self.body)
+        if body is None:
+            # Ignore empty PR reviews
+            return ""
+        msg = """%s submitted a review on pull request [#%s %s](%s):
+> %s""" % (self.user_link(), self.number, self.title, self.url, body)
         return msg
 
 class PullRequestComment(Payload):
@@ -234,3 +271,12 @@ class Wiki(Payload):
             msg.append(ctext)
         return "".join(msg)
 
+class Status(Payload):
+    def __init__(self, data):
+        Payload.__init__(self, data)
+
+    def updated(self):
+        url = self.data["target_url"]
+        description = self.data["description"]
+        msg = "[%s](%s) in %s." % (description, url, self.repo_link())
+        return msg

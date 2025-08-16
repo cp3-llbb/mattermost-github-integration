@@ -6,7 +6,7 @@ from mattermostgithub import config, app
 
 import hmac
 import hashlib
-SECRET = hmac.new(config.SECRET, digestmod=hashlib.sha1) if config.SECRET else None
+SECRET = hmac.new(config.SECRET.encode('utf8'), digestmod=hashlib.sha1) if config.SECRET else None
 
 def check_signature_githubsecret(signature, secret, payload):
     sig2 = secret.copy()
@@ -137,6 +137,12 @@ def handle_github(data, event):
             msg = PullRequest(data).assigned()
         elif data['action'] == "synchronize":
             msg = PullRequest(data).synchronize()
+        elif data['action'] == "review_requested":
+            msg = PullRequest(data).review_requested()
+        elif data['action'] == "enqueued":
+            msg = PullRequest(data).pr_enqueued()
+        elif data['action'] == "dequeued":
+            msg = PullRequest(data).pr_dequeued()
     elif event == "issues":
         if data['action'] == "opened":
             msg = Issue(data).opened()
@@ -160,6 +166,9 @@ def handle_github(data, event):
     elif event == "delete":
         if data['ref_type'] == "branch":
             msg = Branch(data).deleted()
+    elif event == "pull_request_review":
+        if data['action'] == "submitted":
+            msg = PullRequestReview(data).submitted()
     elif event == "pull_request_review_comment":
         if data['action'] == "created":
             msg = PullRequestComment(data).created()
@@ -172,16 +181,35 @@ def handle_github(data, event):
             msg = CommitComment(data).created()
     elif event == "gollum":
         msg = Wiki(data).updated()
+    elif event == "status":
+        if data["state"] in ["failure", "error"]:
+            msg = Status(data).updated()
 
     if msg:
         hook_info = get_hook_info(data)
         if hook_info:
             url, channel = get_hook_info(data)
 
-            if hasattr(config, "GITHUB_IGNORE_ACTIONS") and \
-               event in config.GITHUB_IGNORE_ACTIONS and \
-               data['action'] in config.GITHUB_IGNORE_ACTIONS[event]:
-                return "Notification action ignored (as per configuration)"
+            action = None
+            if "action" in data:
+                action = data["action"]
+            elif "ref_type" in data:
+                action = data["ref_type"]
+
+            if action:
+                if hasattr(config, "GITHUB_IGNORE_ACTIONS") and \
+                   event in config.GITHUB_IGNORE_ACTIONS and \
+                   action in config.GITHUB_IGNORE_ACTIONS[event]:
+                    return "Notification action ignored (as per configuration)"
+
+            if hasattr(config, "IGNORE_USER_EVENTS") and "sender" in data \
+               and data['sender']['login'] in config.IGNORE_USER_EVENTS \
+               and event in config.IGNORE_USER_EVENTS[data['sender']['login']]:
+                return "User blocked from generating this notifications"
+
+            if hasattr(config, "REDIRECT_EVENTS") and \
+                    event in config.REDIRECT_EVENTS:
+                channel = config.REDIRECT_EVENTS[event]
 
             post(msg, url, channel)
             return "Notification successfully posted to Mattermost"
@@ -395,7 +423,7 @@ def get_hook_info(data):
 
 if __name__ == "__main__":
     app.run(
-        host=config.SERVER['address'] or "0.0.0.0",
+        host=config.SERVER['address'] or "127.0.0.1",
         port=config.SERVER['port'] or 5000,
         debug=False
     )
