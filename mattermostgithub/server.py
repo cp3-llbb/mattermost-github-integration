@@ -6,7 +6,7 @@ from mattermostgithub import config, app
 
 import hmac
 import hashlib
-SECRET = hmac.new(config.SECRET.encode('utf8'), digestmod=hashlib.sha1) if config.SECRET else None
+SECRET = hmac.new(config.SECRET, digestmod=hashlib.sha1) if config.SECRET else None
 
 def check_signature_githubsecret(signature, secret, payload):
     sig2 = secret.copy()
