@@ -9,7 +9,7 @@ try:
     import config
     import mattermostgithub
     sys.modules[module_name] = config
-except ImportError:
+except ModuleNotFoundError:
     if 'MGI_CONFIG_FILE' in os.environ:
         file_path = os.environ['MGI_CONFIG_FILE']
         try:
